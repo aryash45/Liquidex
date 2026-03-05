@@ -1,206 +1,182 @@
-# 🛡️ GuardianForge
+# DeFi Sentinel
 
-> **Autonomous AI Agent for Wallet Security & Guardian Recovery**
+**Real-time DeFi position monitoring with AI-powered risk analysis.**
 
-An AI-powered wallet protection system that monitors for real-time threats, rates risk using LLM, and escalates to guardians for on-chain recovery — faster than waiting for inactivity.
+Connect your wallet → see your Aave V3 health factor → get AI advice on your liquidation risk.
 
-![Polygon Amoy](https://img.shields.io/badge/Polygon-Amoy%20Testnet-8247e5)
-![Next.js 14](https://img.shields.io/badge/Next.js-14-black)
-![Groq](https://img.shields.io/badge/LLM-Groq%20Llama%203.3-orange)
+![License](https://img.shields.io/badge/license-MIT-blue)
+![Next.js](https://img.shields.io/badge/Next.js-16-black)
+![Express](https://img.shields.io/badge/Express-4-green)
 
----
+### 📖 Documentation
 
-## 🎯 What Makes This Different
-
-| Traditional (Argent/Safe) | GuardianForge                 |
-| ------------------------- | ----------------------------- |
-| Manual guardian triggers  | **AI auto-detects anomalies** |
-| Wait for inactivity       | **Real-time threat response** |
-| No risk assessment        | **LLM rates risk 0-100**      |
-| No prevention             | **Auto-freeze at 70+ risk**   |
+- **[Dev Log](./DEVLOG.md)** — Architecture decisions, pivot story, AI failure points, and what I'd do differently
+- **[PRD](./docs/PRD.md)** — Product Requirements Document (feature specs, user flows, success metrics)
+- **[TRD](./docs/TRD.md)** — Technical Requirements Document (system design, Aave V3 integration, database schema)
 
 ---
 
-## 🚀 Quick Start
+## The Problem
+
+DeFi users with leveraged lending positions lose **billions** annually to preventable liquidations:
+
+- **$2.5B+** liquidated on Aave & Compound historically
+- **$19B** wiped out in a single day (October 2025)
+- No tool combines real-time alerts with AI-powered "what should I do?" guidance
+
+## The Solution
+
+DeFi Sentinel reads your positions **directly from on-chain contracts** (not an API middleman), calculates your exact liquidation price, and lets you ask an AI advisor what to do — using your **real numbers**, not hallucinated data.
+
+---
+
+## Architecture
+
+```
+Frontend (Next.js 16)  ←→  Backend (Express)  ←→  Aave V3 Contracts (Mainnet)
+                                  ↓
+                            PostgreSQL + Redis
+                                  ↓
+                            Groq LLM + Telegram Alerts
+```
+
+| Layer    | Stack                                                                           |
+| -------- | ------------------------------------------------------------------------------- |
+| Frontend | Next.js 16 · React 19 · wagmi v2 · viem v2 · RainbowKit · Tailwind 4 · Recharts |
+| Backend  | Express · Prisma ORM · PostgreSQL · Redis · Groq SDK (Llama 3.3 70B)            |
+| Chains   | Ethereum · Polygon · Arbitrum (Aave V3 Pool contracts)                          |
+
+---
+
+## Features (V1)
+
+- **Health Factor Gauge** — animated circular visualization, color-coded by risk level
+- **Multi-Chain Position Table** — collateral, debt, LTV, and health factor per chain
+- **Liquidation Distance Bars** — shows exactly how much your collateral must drop before liquidation
+- **AI Risk Advisor** — chat powered by Groq with your real on-chain data injected into context
+- **Background Monitor** — checks all subscribed wallets every 30s, stores snapshots every 5min
+- **Telegram Alerts** — fires when health factor crosses your threshold (while you sleep)
+
+---
+
+## Quick Start
 
 ### Prerequisites
 
-- Node.js 18+
-- Polygon Amoy testnet MATIC (get from [faucet](https://faucet.polygon.technology/))
-- [Groq API key](https://console.groq.com/) (free)
-- [WalletConnect Project ID](https://cloud.walletconnect.com/)
+- Node.js 20+
+- PostgreSQL ([Supabase free tier](https://supabase.com) works)
+- Redis (optional — gracefully degrades without it)
 
-### 1. Deploy Contract
+### Backend
 
 ```bash
-cd contracts
-npm install
+cd backend
 cp .env.example .env
-# Add your PRIVATE_KEY to .env
-
-npx hardhat run scripts/deploy.ts --network amoy
-# Note the deployed address!
+# Fill in: DATABASE_URL, GROQ_API_KEY, ALCHEMY_RPC_ETH
+npm install
+npx prisma db push
+npm run dev                # → http://localhost:3001
 ```
 
-### 2. Setup Frontend
+### Frontend
 
 ```bash
 cd frontend
+cp .env.example .env.local
+# Fill in: NEXT_PUBLIC_WALLETCONNECT_ID, NEXT_PUBLIC_ALCHEMY_KEY
 npm install
-cp .env.local.example .env.local
+npm run dev                # → http://localhost:3000
 ```
 
-Edit `.env.local`:
-
-```env
-NEXT_PUBLIC_CONTRACT_ADDRESS=0xYourDeployedAddress
-NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=your_project_id
-```
-
-Run:
+### Verify
 
 ```bash
-npm run dev
-# Open http://localhost:3000
-```
+curl http://localhost:3001/api/health
+# → {"status":"ok","service":"defi-sentinel-backend"}
 
-### 3. Setup Agent
-
-```bash
-cd agent
-npm install
-cp .env.example .env
-```
-
-Edit `.env`:
-
-```env
-RPC_URL=https://rpc-amoy.polygon.technology/
-AGENT_PRIVATE_KEY=your_private_key
-CONTRACT_ADDRESS=0xYourDeployedAddress
-MONITORED_WALLETS=0xYourWallet1,0xYourWallet2
-GROQ_API_KEY=gsk_...
-TELEGRAM_BOT_TOKEN=your_bot_token
-TELEGRAM_CHAT_ID=your_chat_id
-```
-
-Run the agent:
-
-```bash
-npm run dev
-```
-
-Or run demo simulation:
-
-```bash
-npm run simulate
+curl http://localhost:3001/api/positions/0xYOUR_WALLET
+# → {"positions":[...],"liquidations":[...]}
 ```
 
 ---
 
-## 📱 Frontend Features
+## Environment Variables
 
-- **Wallet Connect** - RainbowKit on Polygon Amoy
-- **Heartbeat Animation** - Pulsing green (safe) / red (threat)
-- **Risk Meter** - 0-100 score from AI analysis
-- **Alert Guardians Button** - Manual SOS trigger
-- **Guardian Setup** - Add 3-5 guardian addresses
+### Backend (`backend/.env`)
 
----
+| Variable               | Required | Description                                 |
+| ---------------------- | -------- | ------------------------------------------- |
+| `DATABASE_URL`         | ✅       | PostgreSQL connection string                |
+| `GROQ_API_KEY`         | ✅       | [Groq Console](https://console.groq.com)    |
+| `ALCHEMY_RPC_ETH`      | ✅       | [Alchemy](https://alchemy.com) Ethereum RPC |
+| `ALCHEMY_RPC_POLYGON`  | Optional | Polygon RPC (falls back to public)          |
+| `ALCHEMY_RPC_ARBITRUM` | Optional | Arbitrum RPC (falls back to public)         |
+| `REDIS_URL`            | Optional | Redis cache (degrades gracefully)           |
+| `TELEGRAM_BOT_TOKEN`   | Optional | [@BotFather](https://t.me/BotFather)        |
 
-## 🤖 Agent Features
+### Frontend (`frontend/.env.local`)
 
-- **Wallet Polling** - Monitors balance/tx changes
-- **Groq LLM** - Llama 3.3 70B for risk assessment
-- **Smart Scoring** - 0-30 low, 31-50 moderate, 51-70 high, 71-100 critical
-- **On-chain Reports** - Calls `reportAnomaly()` at 50+ risk
-- **Auto-freeze** - Contract freezes wallet at 70+ risk
-- **Telegram Alerts** - Instant notifications
-
----
-
-## 🎮 Demo Flow
-
-1. **Connect wallet** on frontend
-2. **Add 3 guardians** → Save
-3. **Run simulation**: `cd agent && npm run simulate`
-4. Watch:
-   - 🟢 Low risk → No action
-   - 🟡 Medium risk → Telegram alert
-   - 🔴 Critical risk → Contract call + freeze + Telegram
+| Variable                       | Required | Description                                            |
+| ------------------------------ | -------- | ------------------------------------------------------ |
+| `NEXT_PUBLIC_WALLETCONNECT_ID` | ✅       | [WalletConnect Cloud](https://cloud.walletconnect.com) |
+| `NEXT_PUBLIC_ALCHEMY_KEY`      | Optional | Alchemy API key for browser RPC                        |
+| `NEXT_PUBLIC_API_URL`          | Optional | Backend URL (default: `http://localhost:3001`)         |
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
-guardian-forge/
-├── contracts/           # Solidity smart contract
-│   ├── GuardianForgeAgent.sol
-│   └── scripts/deploy.ts
-├── frontend/            # Next.js 14 dashboard
-│   └── app/
-│       ├── page.tsx     # Main dashboard
-│       ├── providers.tsx # RainbowKit setup
-│       └── contract.ts  # ABI & address
-├── agent/               # Node.js AI agent
-│   ├── agent.ts         # Main monitoring loop
-│   └── simulate.ts      # Demo scenarios
-└── README.md
+├── frontend/                 # Next.js 16 (App Router)
+│   ├── app/
+│   │   ├── page.tsx          # Landing page
+│   │   ├── dashboard/page.tsx# Main dashboard
+│   │   ├── components/       # HealthGauge, PositionTable, LiquidationBar, ChatPanel
+│   │   ├── lib/api.ts        # Typed API client
+│   │   └── providers.tsx     # wagmi + RainbowKit
+│   └── package.json
+│
+├── backend/                  # Express API + background jobs
+│   ├── src/
+│   │   ├── index.ts          # Server entry
+│   │   ├── routes/           # positions, alerts, chat, history
+│   │   ├── services/         # aave, monitor, telegram
+│   │   └── lib/              # prisma, redis, groq, chains
+│   ├── prisma/schema.prisma
+│   └── package.json
+│
+├── README.md
+└── LICENSE
 ```
 
 ---
 
-## 🔐 Contract Functions
+## API Endpoints
 
-| Function                              | Description                        |
-| ------------------------------------- | ---------------------------------- |
-| `setGuardians(addresses[], required)` | Set guardian addresses             |
-| `alertGuardians()`                    | Manual SOS (starts 24h fast-track) |
-| `reportAnomaly(wallet, type, risk)`   | Agent reports threat               |
-| `approveRecovery(wallet, newOwner)`   | Guardian approves                  |
-| `executeRecovery(wallet)`             | Execute after delay                |
-
----
-
-## 🌐 Environment Variables
-
-### Frontend (`.env.local`)
-
-```env
-NEXT_PUBLIC_CONTRACT_ADDRESS=0x...
-NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=...
-```
-
-### Agent (`.env`)
-
-```env
-RPC_URL=https://rpc-amoy.polygon.technology/
-AGENT_PRIVATE_KEY=...
-CONTRACT_ADDRESS=0x...
-MONITORED_WALLETS=0x...,0x...
-GROQ_API_KEY=gsk_...
-TELEGRAM_BOT_TOKEN=...
-TELEGRAM_CHAT_ID=...
-```
+| Method   | Route                     | Description                               |
+| -------- | ------------------------- | ----------------------------------------- |
+| `GET`    | `/api/positions/:address` | Live Aave V3 positions across 3 chains    |
+| `POST`   | `/api/chat`               | AI advisor (Groq + real position context) |
+| `POST`   | `/api/alerts`             | Create health factor alert                |
+| `GET`    | `/api/alerts/:address`    | Get alerts for a wallet                   |
+| `DELETE` | `/api/alerts/:id`         | Delete an alert                           |
+| `GET`    | `/api/history/:address`   | Health factor snapshots (24h/7d/30d)      |
+| `GET`    | `/api/health`             | Server health check                       |
 
 ---
 
-## ⚙️ Tech Stack
+## How the AI Advisor Works
 
-- **Smart Contract**: Solidity 0.8.20 + Hardhat
-- **Frontend**: Next.js 14 + Tailwind + Framer Motion
-- **Wallet**: RainbowKit + Wagmi + Viem
-- **AI**: Groq Llama 3.3 70B
-- **Alerts**: Telegraf
-- **Network**: Polygon Amoy Testnet
+When you ask a question, the backend:
+
+1. Reads your **live on-chain position** from Aave V3 Pool contracts
+2. Calculates your **liquidation prices** and **health factor**
+3. Formats this as structured context for the LLM
+4. Sends it to Groq (Llama 3.3 70B) with strict rules: **use only real numbers, never fabricate data**
+5. Returns actionable advice like: _"Repay $200 USDC to improve your health factor from 1.15 to 1.52"_
 
 ---
 
-## 📄 License
+## License
 
 MIT
-
----
-
-**Built for hackathon demo** 🏆
